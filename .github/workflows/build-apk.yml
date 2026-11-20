@@ -1,15 +1,11 @@
-name: Build HT ScorePath v4.5 APK (Test Path Fix)
+name: Build HT ScorePath CurveStation v4.5.1 APK
 
 on:
   workflow_dispatch:
   push:
     paths:
       - '.github/workflows/build-apk.yml'
-      - 'HTScorePath_CurveStation_v4_5_OneUpload.zip'
-      - 'app/**'
-      - 'tests/**'
-      - 'build.gradle'
-      - 'settings.gradle'
+      - 'HTScorePath_CurveStation_v4_5_1_OneUpload.zip'
 
 jobs:
   build:
@@ -18,72 +14,57 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout repository
+      - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Install Java 17
+      - name: Use Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle 8.10.2
+      - name: Use Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
 
-      - name: Set up Node.js 20
+      - name: Use Node 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Extract v4.5 project
+      - name: Extract v4.5.1 source
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -f HTScorePath_CurveStation_v4_5_OneUpload.zip ]]; then
-            unzip -oq HTScorePath_CurveStation_v4_5_OneUpload.zip
-          fi
-          test -f settings.gradle || { echo 'ERROR: settings.gradle not found'; exit 1; }
-          test -f app/build.gradle || { echo 'ERROR: app/build.gradle not found'; exit 1; }
-          test -f app/src/main/java/com/htlive/monitor/ScoreGuardEngine.java || { echo 'ERROR: ScoreGuardEngine.java not found'; exit 1; }
+          test -f HTScorePath_CurveStation_v4_5_1_OneUpload.zip || { echo 'ERROR: please upload the v4.5.1 ZIP at repo root'; exit 1; }
+          unzip -oq HTScorePath_CurveStation_v4_5_1_OneUpload.zip
+          test -f settings.gradle
+          test -f app/build.gradle
+          test -f app/src/main/assets/index.html
+          test -f tests/fixtures/v4_4/MonitorService.java
 
-      # GitHub ubuntu-24.04 already includes Android SDK 35 and Build Tools 35.0.0.
-      # Avoid android-actions/setup-android@v3: its SDK-manager download/license
-      # step failed before the Android project could be compiled.
-      - name: Check preinstalled Android SDK
+      - name: Use preinstalled Android SDK
         shell: bash
         run: |
           set -euo pipefail
-          echo "ANDROID_HOME=${ANDROID_HOME:-missing}"
-          test -n "${ANDROID_HOME:-}" || { echo 'ERROR: ANDROID_HOME is unset'; exit 1; }
-          test -f "$ANDROID_HOME/platforms/android-35/android.jar" || { echo 'ERROR: Android API 35 not installed on runner'; exit 1; }
-          test -d "$ANDROID_HOME/build-tools/35.0.0" || { echo 'ERROR: Build Tools 35.0.0 not installed on runner'; exit 1; }
+          test -n "${ANDROID_HOME:-}" || { echo 'ANDROID_HOME is not defined'; exit 1; }
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar" || { echo 'Android API 35 is not installed'; exit 1; }
+          test -d "$ANDROID_HOME/build-tools/35.0.0" || { echo 'Android Build Tools 35 are not installed'; exit 1; }
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
-          echo 'Android SDK ready (using runner preinstalled packages).'
 
-      - name: Run JavaScript tests
+      - name: Run JavaScript regressions
         shell: bash
         run: |
           set -euo pipefail
-          for file in tests/*.test.js; do
-            # The first v4.5 ZIP contains a regression test that reads an
-            # unavailable ../HTScorePath_v4_4_work developer directory.
-            # Run it once the self-contained v4.4 fixtures are available.
-            if [[ "$file" == "tests/bet365_horizontal_v45.test.js" && ! -f tests/fixtures/v4_4/MonitorService.java ]]; then
-              echo "::warning file=$file::Missing v4.4 baseline in older ZIP; only this historical comparison is skipped. Other tests and APK build still run."
-              continue
-            fi
-            echo "Running: $file"
-            node "$file"
-          done
+          for f in tests/*.test.js; do node "$f"; done
 
-      - name: Build debug APK
+      - name: Build APK
         run: gradle :app:assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: HTScorePath-CurveStation-v4.5-debug-apk
+          name: HTScorePath-CurveStation-v4.5.1-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
