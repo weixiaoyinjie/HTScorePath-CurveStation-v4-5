@@ -1,12 +1,11 @@
-
-name: Build HT ScorePath CurveStation v4.5 APK
+name: Build HT ScorePath v4.5 APK (SDK Fix)
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - 'HTScorePath_CurveStation_v4_5_OneUpload.zip'
       - '.github/workflows/build-apk.yml'
+      - 'HTScorePath_CurveStation_v4_5_OneUpload.zip'
       - 'app/**'
       - 'tests/**'
       - 'build.gradle'
@@ -14,61 +13,67 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
+      - name: Install Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Setup Gradle 8.10.2
+      - name: Set up Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
 
-      - name: Unzip sources if uploaded as ZIP
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Extract v4.5 project
         shell: bash
         run: |
           set -euo pipefail
           if [[ -f HTScorePath_CurveStation_v4_5_OneUpload.zip ]]; then
             unzip -oq HTScorePath_CurveStation_v4_5_OneUpload.zip
           fi
-          test -f settings.gradle
-          test -f app/build.gradle
-          test -f app/src/main/java/com/htlive/monitor/ScoreGuardEngine.java
+          test -f settings.gradle || { echo 'ERROR: settings.gradle not found'; exit 1; }
+          test -f app/build.gradle || { echo 'ERROR: app/build.gradle not found'; exit 1; }
+          test -f app/src/main/java/com/htlive/monitor/ScoreGuardEngine.java || { echo 'ERROR: ScoreGuardEngine.java not found'; exit 1; }
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install required Android SDK
+      # GitHub ubuntu-24.04 already includes Android SDK 35 and Build Tools 35.0.0.
+      # Avoid android-actions/setup-android@v3: its SDK-manager download/license
+      # step failed before the Android project could be compiled.
+      - name: Check preinstalled Android SDK
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+          echo "ANDROID_HOME=${ANDROID_HOME:-missing}"
+          test -n "${ANDROID_HOME:-}" || { echo 'ERROR: ANDROID_HOME is unset'; exit 1; }
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar" || { echo 'ERROR: Android API 35 not installed on runner'; exit 1; }
+          test -d "$ANDROID_HOME/build-tools/35.0.0" || { echo 'ERROR: Build Tools 35.0.0 not installed on runner'; exit 1; }
+          printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+          echo 'Android SDK ready (using runner preinstalled packages).'
 
-      - name: Check JavaScript logic
+      - name: Run JavaScript tests
         shell: bash
         run: |
           set -euo pipefail
-          for testfile in tests/*.test.js; do
-            node "$testfile"
+          for file in tests/*.test.js; do
+            node "$file"
           done
 
-      - name: Assemble v4.5 debug APK
+      - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon --stacktrace
 
-      - name: Upload v4.5 APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: HTScorePath-CurveStation-v4.5-debug-apk
